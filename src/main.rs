@@ -58,8 +58,7 @@ fn main() {
             .takes_value(true)
             .help("estimated total unique kmers. good rule of thumb is roughly 2 * genome size"))
         .get_matches();
-    let args: Vec<String> = env::args().collect();
-    let input_files: Vec<_> = matches.value_of("fastqs").unwrap().collect();;
+    let input_files: Vec<_> = matches.values_of("fastqs").unwrap().collect();;
     let min = matches.value_of("min_coverage").unwrap();
     let min: u32 = min.to_string().parse::<u32>().unwrap();
     let max = matches.value_of("max_coverage").unwrap();
@@ -110,6 +109,7 @@ fn get_alts(current_base: u8) -> [u8; 3] {
         1 => C_ALT,
         2 => G_ALT,
         3 => T_ALT,
+        _ => panic!("not dna"),
     }
 } 
 
