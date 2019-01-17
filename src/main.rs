@@ -31,7 +31,7 @@ fn main() {
             .takes_value(true)
             .multiple(true)
             .required(true)
-            .help("fastqs from which to find het snp kmers"))
+            .help("gzipped fastqs from which to find het snp kmers"))
         .arg(Arg::with_name("min_coverage")
             .long("min_coverage")
             .takes_value(true)
