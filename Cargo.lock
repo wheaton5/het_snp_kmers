@@ -281,7 +281,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-name = "haplossembly"
+name = "het_snp_kmers"
 version = "0.1.0"
 dependencies = [
  "bloom 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -1,5 +1,5 @@
 [package]
-name = "haplossembly"
+name = "het_snp_kmers"
 version = "0.1.0"
 authors = ["wheaton5 <whheaton@gmail.com>"]
 

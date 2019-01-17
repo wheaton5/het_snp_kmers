@@ -17,7 +17,6 @@ use debruijn::*;
 use debruijn::dna_string::*;
 use debruijn::kmer::*;
 
-use std::env;
 use std::str;
 
 use bloom::{ASMS,CountingBloomFilter,BloomFilter};
@@ -72,7 +71,7 @@ fn main() {
     let k: usize = 21;
     let counting_bits: usize = 7;
     let bloom_kmer_counter = count_kmers_fastq(&input_files, counting_bits, estimated_kmers, k);
-    detect_het_kmers(bloom_kmer_counter, &input_files, k, counting_bits, estimated_kmers, min, max, max_error, max_sum);
+    detect_het_kmers(bloom_kmer_counter, &input_files, k, estimated_kmers, min, max, max_error, max_sum);
 }
 
 fn count_kmers_fastq(kmers_in: &Vec<&str>, counting_bits: usize, estimated_kmers: u32, k_size: usize) -> CountingBloomFilter {
@@ -115,10 +114,10 @@ fn get_alts(current_base: u8) -> [u8; 3] {
 
 
 fn detect_het_kmers(kmer_counts: CountingBloomFilter, fastqs: &Vec<&str>, 
-        k_size: usize, counting_bits: usize, estimated_kmers: u32, min_coverage: u32, max_coverage: u32, max_error: u32, max_sum: u32) {
+        k_size: usize, estimated_kmers: u32, min_coverage: u32, max_coverage: u32, max_error: u32, max_sum: u32) {
     let mut visited_kmer = BloomFilter::with_rate(0.03, estimated_kmers);
     eprintln!("counting bloom filter created, now second pass to detect het kmers");
-    let max_count: u32 = (2u32).pow(counting_bits as u32) - 1;
+    //let max_count: u32 = (2u32).pow(counting_bits as u32) - 1;
     
     let mut full_hist = match File::create("fullhist.csv") {
         Err(_) => panic!("couldn't open file for writing"),
@@ -130,7 +129,7 @@ fn detect_het_kmers(kmer_counts: CountingBloomFilter, fastqs: &Vec<&str>,
     };
     
     let mut alt_counts =  vec!(0,0,0);
-    let mut count = 0;
+    //let mut count = 0;
     for kmer_file in fastqs {
         let file = match File::open(kmer_file) {
             Ok(file) => file,
