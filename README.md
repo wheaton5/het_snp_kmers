@@ -34,3 +34,11 @@ OPTIONS:
         --max_total_coverage <max_total_coverage>    max sum of all kmers with middle base changed
         --min_coverage <min_coverage>                min coverage for each kmer of the pair
  ```
+
+
+Example on made up small test data
+```
+./target/release/het_snp_kmers --fastqs test/data/test.fastq.gz --estimated_kmers 20 --min_coverage 4 --max_coverage 10 --max_total_coverage 80 --max_error 0 --output_full_hist hist.tsv
+counting bloom filter created, now second pass to detect het kmers
+AAAAAGGGGGCCCCCTTTTTT   5       AAAAAGGGGGTCCCCTTTTTT   7
+```
