@@ -1,9 +1,18 @@
+#[macro_use]
 extern crate clap;
 extern crate bloom;
 extern crate flate2;
 extern crate debruijn;
+extern crate fnv;
 
-use clap::{Arg, App};
+use fnv::FnvHasher;
+use std::collections::{HashSet};
+use std::hash::BuildHasherDefault;
+
+//type FnvHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FnvHasher>>;
+type FnvHashSet<V> = HashSet<V, BuildHasherDefault<FnvHasher>>;
+
+use clap::{App};
 
 use flate2::read::GzDecoder;
 use std::io;
@@ -14,59 +23,28 @@ use std::io::Write;
 use std::cmp::min;
 
 use debruijn::*;
-use debruijn::dna_string::*;
+//use debruijn::dna_string::*;
 use debruijn::kmer::*;
 
 use std::str;
 
+static mut KMER_SIZE: usize = 0;
+
 use bloom::{ASMS,CountingBloomFilter,BloomFilter};
 
 fn main() {
-    let matches = App::new("het_snp_kmers")
-        .author("Haynes Heaton <whheaton@gmail.com>")
-        .about("Finds kmer pairs that are different in the middle base and each have roughly haploid coverage. Meant for illumina data as an initial step for de novo phasing.")
-        .arg(Arg::with_name("fastqs")
-            .long("fastqs")
-            .short("f")
-            .takes_value(true)
-            .multiple(true)
-            .required(true)
-            .help("gzipped fastqs from which to find het snp kmers"))
-        .arg(Arg::with_name("min_coverage")
-            .long("min_coverage")
-            .takes_value(true)
-            .required(true)
-            .help("min coverage for each kmer of the pair"))
-        .arg(Arg::with_name("max_coverage")
-            .long("max_coverage")
-            .takes_value(true)
-            .required(true)
-            .help("max coverage for each kmer of the pair"))
-        .arg(Arg::with_name("max_error")
-            .long("max_error")
-            .takes_value(true)
-            .help("max count of the other two kmers with middle base changed. For best results best to be strict and use 0."))
-        .arg(Arg::with_name("max_total_coverage")
-            .long("max_total_coverage")
-            .takes_value(true)
-            .required(true)
-            .help("max sum of all kmers with middle base changed"))
-        .arg(Arg::with_name("estimated_kmers")
-            .long("estimated_kmers")
-            .required(true)
-            .takes_value(true)
-            .help("estimated total unique kmers. good rule of thumb is roughly 2 * genome size"))
-        .arg(Arg::with_name("output_full_hist")
-            .long("output_full_hist")
-            .required(true)
-            .takes_value(true)
-            .help("output full kmer count histogram to this file if specified otherwise does not output histogram"))
-        .get_matches();
+    let yaml = load_yaml!("cli.yml");
+    let matches = App::from_yaml(yaml).get_matches();
     let input_files: Vec<_> = matches.values_of("fastqs").unwrap().collect();;
     let min = matches.value_of("min_coverage").unwrap();
     let min: u32 = min.to_string().parse::<u32>().unwrap();
     let max = matches.value_of("max_coverage").unwrap();
     let max: u32 = max.to_string().parse::<u32>().unwrap();
+    let kmer_size = matches.value_of("kmer_size").unwrap_or("21");
+    let kmer_size: usize = kmer_size.to_string().parse::<usize>().unwrap();
+    unsafe {
+        KMER_SIZE = kmer_size;
+    }
     let max_error = matches.value_of("max_error").unwrap_or("0");
     let max_error: u32 = max_error.to_string().parse::<u32>().unwrap();
     let max_sum = matches.value_of("max_total_coverage").unwrap();
@@ -74,14 +52,14 @@ fn main() {
     let output_hist = matches.value_of("output_full_hist").unwrap_or("none");
     let estimated_kmers = matches.value_of("estimated_kmers").unwrap_or("1000000000");
     let estimated_kmers: u32 = estimated_kmers.to_string().parse::<u32>().unwrap();
-    let k: usize = 21;
     let counting_bits: usize = 7;
-    let bloom_kmer_counter = count_kmers_fastq(&input_files, counting_bits, estimated_kmers, k);
-    detect_het_kmers(bloom_kmer_counter, &input_files, k, estimated_kmers, min, max, max_error, max_sum, output_hist.to_string());
+    let (bloom_kmer_counter, covered_kmers) = count_kmers_fastq(&input_files, counting_bits, estimated_kmers);
+    detect_het_kmers(bloom_kmer_counter, &input_files, estimated_kmers, min, max, max_error, max_sum, output_hist.to_string());
 }
 
-fn count_kmers_fastq(kmers_in: &Vec<&str>, counting_bits: usize, estimated_kmers: u32, k_size: usize) -> CountingBloomFilter {
+fn count_kmers_fastq(kmers_in: &Vec<&str>, counting_bits: usize, estimated_kmers: u32) -> (CountingBloomFilter, FnvHashSet<u64>) {
     let mut kmer_counts: CountingBloomFilter = CountingBloomFilter::with_rate(counting_bits, 0.05, estimated_kmers);
+    let mut coverage_passing_kmers: FnvHashSet<u64> = FnvHashSet::default();
     for kmer_file in kmers_in {
         let file = match File::open(kmer_file) {
             Ok(file) => file,
@@ -94,15 +72,16 @@ fn count_kmers_fastq(kmers_in: &Vec<&str>, counting_bits: usize, estimated_kmers
             
             if line_number % 4 == 1 {
                 
-                let dna: DnaString = DnaString::from_dna_string(&line.unwrap());
-                for kmer_start in 0..(dna.len() - k_size + 1) {
-                    let k: Kmer21 = dna.get_kmer(kmer_start);
+                //let dna: DnaString = DnaString::from_dna_string(&line.unwrap());
+                //for kmer_start in 0..(dna.len() - k_size + 1) {
+                for k in KmerX::kmers_from_ascii(&line.unwrap().as_bytes()) {
+                    //let k: KmerX = dna.get_kmer(kmer_start);
                     kmer_counts.insert(&min(k.to_u64(), k.rc().to_u64()));
                 }
             }
         }
     }
-    kmer_counts
+    (kmer_counts, coverage_passing_kmers)
 }
 
 const A_ALT: [u8; 3] = [1,2,3];
@@ -122,7 +101,7 @@ fn get_alts(current_base: u8) -> [u8; 3] {
 
 
 fn detect_het_kmers(kmer_counts: CountingBloomFilter, fastqs: &Vec<&str>, 
-        k_size: usize, estimated_kmers: u32, min_coverage: u32, max_coverage: u32, max_error: u32, max_sum: u32, 
+        estimated_kmers: u32, min_coverage: u32, max_coverage: u32, max_error: u32, max_sum: u32, 
         output_hist: String) {
     let mut visited_kmer = BloomFilter::with_rate(0.03, estimated_kmers);
     eprintln!("counting bloom filter created, now second pass to detect het kmers");
@@ -131,6 +110,7 @@ fn detect_het_kmers(kmer_counts: CountingBloomFilter, fastqs: &Vec<&str>,
             Err(_) => panic!("couldn't open file for writing"),
             Ok(file) => file,
     };
+    let middle_base = KX::K()/2;
     
     
     let mut alt_counts =  vec!(0,0,0);
@@ -145,10 +125,11 @@ fn detect_het_kmers(kmer_counts: CountingBloomFilter, fastqs: &Vec<&str>,
         let gz = GzDecoder::new(file);
         for (line_number, line) in io::BufReader::new(gz).lines().enumerate() {
             if line_number % 4 == 1 {
-                let dna: DnaString = DnaString::from_dna_string(&line.unwrap());
-                for kmer_start in 0..(dna.len() - k_size + 1) {
-                    let mut k: Kmer21 = dna.get_kmer(kmer_start);
-                    let middle_base = k.get(k_size / 2);
+                //let dna: DnaString = DnaString::from_dna_string(&line.unwrap());
+                for mut k in KmerX::kmers_from_ascii(&line.unwrap().as_bytes()) {
+                    //for kmer_start in 0..(dna.len() - k_size + 1) {
+                    //let mut k: Kmer21 = dna.get_kmer(kmer_start);
+                    //let middle_base = k.get(k_size / 2);
                     let krc = k.rc();
                     let to_hash = min(k.to_u64(), krc.to_u64());
                     if !visited_kmer.contains(&to_hash) {
@@ -156,9 +137,9 @@ fn detect_het_kmers(kmer_counts: CountingBloomFilter, fastqs: &Vec<&str>,
                         let count1 = kmer_counts.estimate_count(&to_hash);
                         let mut all_alt_count = 0;
                         if count1 > min_coverage && count1 < max_coverage {
-                            let alt_bases = get_alts(k.get(k_size / 2));
+                            let alt_bases = get_alts(k.get(middle_base));
                             for (alt_index, alt_base) in alt_bases.iter().enumerate() {
-                                k.set_mut(k_size / 2, *alt_base);
+                                k.set_mut(middle_base, *alt_base);
                                 let krc = k.rc();
                                 let to_hash = min(k.to_u64(), krc.to_u64());
                                 let count2 = kmer_counts.estimate_count(&to_hash);
@@ -173,12 +154,12 @@ fn detect_het_kmers(kmer_counts: CountingBloomFilter, fastqs: &Vec<&str>,
                                 //println!("{} > {} && {} < {} && {} < {} && {} <= {}",count2,min_coverage, count2, max_coverage,all_alt_count-count2, max_error, count1+count2, max_sum);
                                 if count2 > min_coverage && count2 < max_coverage && all_alt_count - count2 <= max_error && count1 + count2 <= max_sum {
                                     //println!(" got here ");
-                                    k.set_mut(k_size/2, middle_base);
+                                    k.set_mut(middle_base, *alt_base);
                                     let mut to_write = k.to_string();
                                     to_write.push_str(&"\t");
                                     to_write.push_str(&count1.to_string());
                                     to_write.push_str(&"\t");
-                                    k.set_mut(k_size/2, *alt_base);
+                                    k.set_mut(middle_base, *alt_base);
                                     to_write.push_str(&k.to_string());
                                     to_write.push_str(&"\t");
                                     to_write.push_str(&count2.to_string());
@@ -210,12 +191,14 @@ fn detect_het_kmers(kmer_counts: CountingBloomFilter, fastqs: &Vec<&str>,
 }
 
 
-type Kmer21 = VarIntKmer<u64, K21>;
+type KmerX = VarIntKmer<u64, KX>;
 #[derive(Debug, Hash, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct K21;
+pub struct KX;
 
-impl KmerSize for K21 {
+impl KmerSize for KX {
     fn K() -> usize {
-        21
+        unsafe {
+            KMER_SIZE
+        }
     }
 }
