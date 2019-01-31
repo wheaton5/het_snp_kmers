@@ -45,8 +45,8 @@ fn count_kmers_fastq(kmers_in: &Vec<String>,
                         (CountingBloomFilter, FnvHashSet<u64>) {
     let mut kmer_counts: CountingBloomFilter = CountingBloomFilter::with_rate(counting_bits, 0.05, estimated_kmers);
     let mut coverage_passing_kmers: FnvHashSet<u64> = FnvHashSet::default();
-    let middle_base_mask: u64 = !(3 << (KX::K())); // make a mask that is 1's outside the two bits at the center of the kmer 
-    println!("middle base mask {:#b}",middle_base_mask);
+    let middle_base_mask: u64 = !(3 << (KX::K()-1)); // make a mask that is 1's outside the two bits at the center of the kmer 
+    //println!("middle base mask {:#b}",middle_base_mask);
     for kmer_file in kmers_in {
         let reader = dna_io::DnaReader::from_path(kmer_file);
         for record in reader {
@@ -76,13 +76,10 @@ fn detect_het_kmers(kmer_counts: CountingBloomFilter, covered_kmers: FnvHashSet<
     eprintln!("counting bloom filter created, detecting het kmers");
     //1's except for middle bits representing middle base and upper mask 0'd out
     let middle_base_mask: u64 = !(3 << (KX::K())) & KmerX::top_mask(KX::K()); 
-    let a_mask = middle_base_mask; // a mask you can & with a kmer to get that kmer with an A in the middle
-    let c_mask = (1 << KX::K()) | middle_base_mask; // or a C in the middle
-    let g_mask = (2 << KX::K()) | middle_base_mask; // etc
-    let t_mask = (3 << KX::K()) | middle_base_mask;
-    println!("C mask {:#b}", c_mask);
-    println!("G mask {:#b}", g_mask);
-    println!("T mask {:#b}", t_mask);
+    let a_mask = 0; // a mask you can | with a middle base invariant kmer to get that kmer with an A in the middle
+    let c_mask = (1 << (KX::K()-1)) | middle_base_mask; // or a C in the middle
+    let g_mask = (2 << (KX::K()-1)) | middle_base_mask; // etc
+    let t_mask = (3 << (KX::K()-1)) | middle_base_mask; // etc
     let masks: [u64; 4] = [a_mask, c_mask, g_mask, t_mask];
     
     //let max_count: u32 = (2u32).pow(counting_bits as u32) - 1;
@@ -148,7 +145,7 @@ fn load_params() -> (Vec<String>, u32, u32, u32, u32, String, u32) {
     let yaml = load_yaml!("params.yml");
     let params = App::from_yaml(yaml).get_matches();
     let mut input_files: Vec<String> = Vec::new();
-    for input_file in params.values_of("fastqs").unwrap() {
+    for input_file in params.values_of("inputs").unwrap() {
         input_files.push(input_file.to_string());
     }
     let min = params.value_of("min_coverage").unwrap();

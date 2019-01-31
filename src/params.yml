@@ -41,6 +41,7 @@ args:
         long: estimated_kmers
         help: estimated total unique kmers. good rule of thumb is roughly 2 * genome size
     - output_full_hist:
+        long: output_full_hist
         required: true
         takes_value: true
         help: file name for full kmer histogram
