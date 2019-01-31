@@ -33,31 +33,13 @@ static mut KMER_SIZE: usize = 0;
 use bloom::{ASMS,CountingBloomFilter,BloomFilter};
 
 fn main() {
-    let yaml = load_yaml!("cli.yml");
-    let matches = App::from_yaml(yaml).get_matches();
-    let input_files: Vec<_> = matches.values_of("fastqs").unwrap().collect();;
-    let min = matches.value_of("min_coverage").unwrap();
-    let min: u32 = min.to_string().parse::<u32>().unwrap();
-    let max = matches.value_of("max_coverage").unwrap();
-    let max: u32 = max.to_string().parse::<u32>().unwrap();
-    let kmer_size = matches.value_of("kmer_size").unwrap_or("21");
-    let kmer_size: usize = kmer_size.to_string().parse::<usize>().unwrap();
-    unsafe {
-        KMER_SIZE = kmer_size;
-    }
-    let max_error = matches.value_of("max_error").unwrap_or("0");
-    let max_error: u32 = max_error.to_string().parse::<u32>().unwrap();
-    let max_sum = matches.value_of("max_total_coverage").unwrap();
-    let max_sum: u32 = max_sum.to_string().parse::<u32>().unwrap();
-    let output_hist = matches.value_of("output_full_hist").unwrap_or("none");
-    let estimated_kmers = matches.value_of("estimated_kmers").unwrap_or("1000000000");
-    let estimated_kmers: u32 = estimated_kmers.to_string().parse::<u32>().unwrap();
+    let (input_files, min, max, max_error, max_sum, output_hist, estimated_kmers) = load_params();
     let counting_bits: usize = 7;
     let (bloom_kmer_counter, covered_kmers) = count_kmers_fastq(&input_files, counting_bits, estimated_kmers);
     detect_het_kmers(bloom_kmer_counter, &input_files, estimated_kmers, min, max, max_error, max_sum, output_hist.to_string());
 }
 
-fn count_kmers_fastq(kmers_in: &Vec<&str>, counting_bits: usize, estimated_kmers: u32) -> (CountingBloomFilter, FnvHashSet<u64>) {
+fn count_kmers_fastq(kmers_in: &Vec<String>, counting_bits: usize, estimated_kmers: u32) -> (CountingBloomFilter, FnvHashSet<u64>) {
     let mut kmer_counts: CountingBloomFilter = CountingBloomFilter::with_rate(counting_bits, 0.05, estimated_kmers);
     let mut coverage_passing_kmers: FnvHashSet<u64> = FnvHashSet::default();
     for kmer_file in kmers_in {
@@ -100,7 +82,7 @@ fn get_alts(current_base: u8) -> [u8; 3] {
 } 
 
 
-fn detect_het_kmers(kmer_counts: CountingBloomFilter, fastqs: &Vec<&str>, 
+fn detect_het_kmers(kmer_counts: CountingBloomFilter, fastqs: &Vec<String>, 
         estimated_kmers: u32, min_coverage: u32, max_coverage: u32, max_error: u32, max_sum: u32, 
         output_hist: String) {
     let mut visited_kmer = BloomFilter::with_rate(0.03, estimated_kmers);
@@ -201,4 +183,30 @@ impl KmerSize for KX {
             KMER_SIZE
         }
     }
+}
+
+fn load_params() -> (Vec<String>, u32, u32, u32, u32, String, u32) {
+    let yaml = load_yaml!("params.yml");
+    let params = App::from_yaml(yaml).get_matches();
+    let mut input_files: Vec<String> = Vec::new();
+    for input_file in params.values_of("fastqs").unwrap() {
+        input_files.push(input_file.to_string());
+    }
+    let min = params.value_of("min_coverage").unwrap();
+    let min: u32 = min.to_string().parse::<u32>().unwrap();
+    let max = params.value_of("max_coverage").unwrap();
+    let max: u32 = max.to_string().parse::<u32>().unwrap();
+    let kmer_size = params.value_of("kmer_size").unwrap_or("21");
+    let kmer_size: usize = kmer_size.to_string().parse::<usize>().unwrap();
+    unsafe {
+        KMER_SIZE = kmer_size;
+    }
+    let max_error = params.value_of("max_error").unwrap_or("0");
+    let max_error: u32 = max_error.to_string().parse::<u32>().unwrap();
+    let max_sum = params.value_of("max_total_coverage").unwrap();
+    let max_sum: u32 = max_sum.to_string().parse::<u32>().unwrap();
+    let output_hist = params.value_of("output_full_hist").unwrap_or("none");
+    let estimated_kmers = params.value_of("estimated_kmers").unwrap_or("1000000000");
+    let estimated_kmers: u32 = estimated_kmers.to_string().parse::<u32>().unwrap();
+    (input_files, min, max, max_error, max_sum, output_hist.to_string(), estimated_kmers)
 }
