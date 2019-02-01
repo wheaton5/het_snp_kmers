@@ -219,7 +219,7 @@ fn load_params() -> (Vec<String>, String, Params) {
     let output_hist = params.value_of("output_full_hist").unwrap_or("none");
     let estimated_kmers = params.value_of("estimated_kmers").unwrap_or("1000000000");
     let estimated_kmers: u64 = estimated_kmers.to_string().parse::<u64>().unwrap();
-    let threads = params.value_of("threads").unwrap_or("0");
+    let threads = params.value_of("threads").unwrap_or("1");
     let threads: u64 = threads.to_string().parse::<u64>().unwrap();
     let counting_bits = params.value_of("counting_bits").unwrap_or("7");
     let counting_bits: usize = counting_bits.to_string().parse::<usize>().unwrap();
