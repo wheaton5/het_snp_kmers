@@ -37,6 +37,7 @@ OPTIONS:
         --max_total_coverage <max_total_coverage>    max sum of all kmers with middle base changed
         --min_coverage <min_coverage>                min coverage for each kmer of the pair
         --output_full_hist <output_full_hist>        file name for full kmer histogram
+    -t, --threads <threads>                          number of threads to use, defaults to 1
 ```
 
 
