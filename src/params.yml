@@ -45,3 +45,13 @@ args:
         required: true
         takes_value: true
         help: file name for full kmer histogram
+    - threads:
+        long: threads
+        short: t
+        takes_value: true
+        help: number of threads to use, defaults to 1
+    - counting_bits:
+        long: counting_bits
+        short: b
+        takes_value: true
+        help: number of bits used for counting bloom filter. Sets limit for maximum count value of 2^counting_bits-1. Default 7.
