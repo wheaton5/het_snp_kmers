@@ -13,7 +13,7 @@ For OSX only you will need xz for the htslib dependency. Linux should have the r
 ```
 brew install xz
 then find where it installed, and put the include path on your CFLAGS
-export CFLAGS=-I/path/to/xz/<version>/include'
+export CFLAGS='-I/path/to/xz/<version>/include'
 or add that to your .bashrc and source it
 ```
 Then you should be able to clone and install the project.
