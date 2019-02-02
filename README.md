@@ -1,7 +1,7 @@
 # het_snp_kmers
 memory efficient de novo detection of het snp kmers using counting bloom filters.
 
-Install requirements: rust ver 1.3 or later
+Install requirements: rust ver 1.3 or later. This probably won't build on OSX easily due to htslib issues.
 If you do not have rust
 ```
 curl https://sh.rustup.rs -sSf | sh
