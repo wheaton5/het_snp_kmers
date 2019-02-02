@@ -9,9 +9,12 @@ echo 'export PATH=~/.cargo/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 which cargo
 ```
-For OSX only you will need xz for the htslib install. Linux should have the required libraries by default. You can get this with homebrew
+For OSX only you will need xz for the htslib dependency. Linux should have the required libraries by default. You can get this with homebrew
 ```
 brew install xz
+then find where it installed, and put the include path on your CFLAGS
+export CFLAGS=-I/path/to/xz/<version>/include'
+or add that to your .bashrc and source it
 ```
 Then you should be able to clone and install the project.
 ```
