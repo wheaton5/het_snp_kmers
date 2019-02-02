@@ -90,7 +90,7 @@ fn count_kmers_fastq(kmers_in: Vec<String>, params: Params, thread_index: u64) -
                 if middle_base_invariant % params.threads != thread_index { continue; }
                 let to_hash = min( k.to_u64(), krc.to_u64() );
                 match kmer_counts.insert_get_count( &to_hash ) {
-                    a if a == params.min_count => { // add a middle base invariant hash to the coverage_passing_kmers set
+                    a if a >= params.min_count => { // add a middle base invariant hash to the coverage_passing_kmers set
                         coverage_passing_kmers.insert(middle_base_invariant);
                     },
                     //max_count => { // this would save memory but not allow a full histogram to be output which is useful
