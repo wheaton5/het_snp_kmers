@@ -1,21 +1,23 @@
 #[macro_use]
 extern crate clap;
+extern crate rayon;
 extern crate bloom;
 extern crate flate2;
 extern crate debruijn;
 extern crate fnv;
 extern crate dna_io;
-use std::thread;
 use fnv::FnvHasher;
+use std::io::Write;
 use std::collections::{HashSet};
 use std::hash::BuildHasherDefault;
 
 type FnvHashSet<V> = HashSet<V, BuildHasherDefault<FnvHasher>>;
+use rayon::prelude::*;
 
 use clap::{App};
+use std::sync::Arc;
 
 use std::error::Error;
-use std::io::prelude::*;
 
 use std::cmp::min;
 
@@ -28,14 +30,39 @@ use bloom::CountingBloomFilter;
 
 fn main() {
     let (input_files, output_hist, parameters) = load_params();
-    let mut thread_handles: Vec<std::thread::JoinHandle<Hist>> = Vec::new();
+    //let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(parameters.threads).build().unwrap();
+    //let mut thread_handles: Vec<std::thread::JoinHandle<Hist>> = Vec::new();
 
-    for thread_index in 0..parameters.threads {
-        let t = thread_spawner(input_files.clone(), parameters.clone(), thread_index);
-        thread_handles.push(t);
-    }
-    wait_and_join_hists(thread_handles, output_hist);
+    //for thread_index in 0..parameters.threads {
+    //    let t = thread_spawner(input_files.clone(), parameters.clone(), thread_index);
+    //    thread_handles.push(t);
+    //}
+
+    //wait_and_join_hists(thread_handles, output_hist);
+    //let thread_data = thread_pool.install(|| read_and_spawn(input_files, parameters));
+    read_and_spawn(input_files, parameters);
 }
+
+fn read_and_spawn(input_files: Vec<String>, parameters: Params) {
+    let mut all_thread_data = ThreadData::new_set(parameters);
+    for input_file in input_files {
+        let reader = dna_io::DnaReader::from_path(&input_file);
+        for record in reader {
+            let seq = Arc::new(record.seq.clone());
+            all_thread_data.par_iter_mut().for_each(|thread_data| {
+                thread_data.handle_seq(seq.clone());
+            });
+            //for thread_data in all_thread_data.iter_mut() {
+            //    handle_seq(thread_data, record.seq.clone());
+            //}
+        }
+    }
+    all_thread_data.par_iter().map(|thread_data| thread_data.detect_het_kmers() ).for_each(drop);
+    //for thread_data in all_thread_data.iter() {
+    //    thread_data.detect_het_kmers();
+    //}
+}
+
 
 fn wait_and_join_hists(thread_handles: Vec<std::thread::JoinHandle<Hist>>, output_hist: String) {
     let mut big_hist: [u32; 1000] = [0; 1000];
@@ -66,14 +93,118 @@ fn wait_and_join_hists(thread_handles: Vec<std::thread::JoinHandle<Hist>>, outpu
     }
 }
 
-fn thread_spawner(input_files: Vec<String>, params: Params, thread_index: u64) -> std::thread::JoinHandle<Hist> {
-    thread::spawn(move || {
-        let (bloom_kmer_counter, covered_kmers) = count_kmers_fastq(input_files, params.clone(), thread_index);
-        let hist = detect_het_kmers(bloom_kmer_counter, covered_kmers, params);
-        hist
-    })
+struct ThreadData {
+    kmer_counts: CountingBloomFilter,
+    visited_kmers: FnvHashSet<u64>,
+    hist: [u32; 1000],
+    mod_index: u64,
+    total_threads: u64,
+    middle_base_mask: u64,
+    params: Params,
 }
 
+impl ThreadData {
+    fn new_set(params: Params) -> Vec<Self> {
+        let mut to_ret: Vec<Self> = Vec::new();
+        let kmers = params.estimated_kmers / params.threads;
+        if kmers > std::u32::MAX as u64 { panic!("cannot support this number of estimated kmers for this number of threads"); }
+        for mod_index in 0..params.threads {
+            let mut cbf = CountingBloomFilter::with_rate(params.counting_bits, 0.05, kmers as u32);
+            let mut visited: FnvHashSet<u64> = FnvHashSet::default();
+            let mut hist = [0u32; 1000];
+            let mut td = ThreadData{
+                kmer_counts: cbf,
+                visited_kmers: visited,
+                hist: hist,
+                mod_index: mod_index,
+                total_threads: params.threads,
+                middle_base_mask: !( 3 << ( KX::K() - 1 ) ), // make a mask that is 1's outside the two bits at the center of the kmer
+                params: params.clone(),
+            };
+            to_ret.push(td);
+        }
+        //for ret in &to_ret { println!("mod index {}",ret.mod_index); }
+        to_ret
+    }
+
+    fn handle_seq(&mut self, seq: Arc<String>) {
+        for k in KmerX::kmers_from_ascii(&seq.as_bytes()) {
+            let krc = k.rc();
+            let middle_base_invariant = min( k.to_u64() & self.middle_base_mask, krc.to_u64() & self.middle_base_mask );
+            let mut kmerstring = String::new();
+            if middle_base_invariant % self.total_threads == self.mod_index {
+                kmerstring.push_str(&KmerX::from_u64(min( k.to_u64(), krc.to_u64() )).to_string());
+            }
+            println!("thread {}, kmer {} u64 {} mod 8 {} {}", self.mod_index, k.to_string(),k.to_u64(),middle_base_invariant % self.total_threads, kmerstring);
+            if middle_base_invariant % self.total_threads != self.mod_index { continue; }
+            let to_hash = min( k.to_u64(), krc.to_u64() );
+            println!("handle thread {} inserting {}",self.mod_index, KmerX::from_u64(to_hash).to_string());
+            match self.kmer_counts.insert_get_count( &to_hash ) {
+                a if a >= self.params.min_count => { // add a middle base invariant hash to the coverage_passing_kmers set
+                    self.visited_kmers.insert(middle_base_invariant);
+                    println!("got above threshold with {} with {}", KmerX::from_u64(to_hash).to_string(), a);
+                },
+                _ => (),
+            }
+        }
+    }
+
+
+    fn detect_het_kmers(&self) {
+		eprintln!("counting bloom filter created, detecting het kmers");
+		//1's except for middle bits representing middle base and upper mask 0'd out
+		let middle_base_mask: u64 = !( 3 << ( KX::K() ) ) & KmerX::top_mask( KX::K() );
+		let a_mask = 0; // a mask you can | with a middle base invariant kmer to get that kmer with an A in the middle
+		let c_mask = ( 1 << ( KX::K() - 1 ) ) | middle_base_mask; // or a C in the middle
+		let g_mask = ( 2 << ( KX::K() - 1 ) ) | middle_base_mask; // etc
+		let t_mask = ( 3 << ( KX::K() - 1 ) ) | middle_base_mask; // etc
+		let masks: [u64; 4] = [ a_mask, c_mask, g_mask, t_mask ];
+
+		let mut full_hist: [u32; 1000] = [0;1000]; // initialize histogram vector
+		let mut alt_counts: [u32; 4] = [0,0,0,0]; let mut total_counts = 0;
+		let mut best_count = 0; let mut best_count_index = 0;
+		let mut second_best_count = 0; let mut second_best_count_index = 0;    
+		for middle_base_invariant_kmer in &self.visited_kmers {
+			let a_hash = middle_base_invariant_kmer;  // always < than its RC so no check
+			let c_hash = middle_base_invariant_kmer | c_mask; // always < its RC so no check
+			let g_u64 = middle_base_invariant_kmer | g_mask; //could be > than its RC if palindromic. must check
+			let gmer = KmerX::from_u64( g_u64 );
+			let g_hash = min( g_u64, gmer.rc().to_u64() );
+			let t_u64 = middle_base_invariant_kmer | t_mask; //could be > than its RC if palindromic. must check
+			let tmer = KmerX::from_u64( t_u64 );
+			let t_hash = min( t_u64, tmer.rc().to_u64() );
+            println!("{}",gmer.to_string());
+			alt_counts[0] = self.kmer_counts.estimate_count( &a_hash );
+			alt_counts[1] = self.kmer_counts.estimate_count( &c_hash );
+			alt_counts[2] = self.kmer_counts.estimate_count( &g_hash );
+			alt_counts[3] = self.kmer_counts.estimate_count( &t_hash );
+            println!("double check {} {} {} {}",alt_counts[0], alt_counts[1], alt_counts[2], alt_counts[3]);
+			for (index, count) in alt_counts.iter().enumerate() {
+				full_hist[min(full_hist.len()-1,*count as usize)] += 1;
+				total_counts += *count;
+                println!("\t{}",*count);
+				if *count >= best_count {
+					second_best_count = best_count;
+					second_best_count_index = best_count_index;
+					best_count = *count;
+					best_count_index = index;
+				} else if *count >= second_best_count {
+					second_best_count = *count;
+					second_best_count_index = index;
+				}
+			}
+			if best_count >= self.params.min_count && second_best_count >= self.params.min_count &&
+					best_count <= self.params.max_count && total_counts - best_count - second_best_count <= self.params.max_error &&
+					best_count + second_best_count <= self.params.max_sum {
+				let kmer = KmerX::from_u64(middle_base_invariant_kmer | masks[best_count_index]);
+				let kmer2 = KmerX::from_u64(middle_base_invariant_kmer | masks[second_best_count_index]);
+				println!("{}\t{}\t{}\t{}",kmer.to_string(), best_count.to_string(), kmer2.to_string(), second_best_count.to_string());
+			}
+			total_counts = 0; best_count = 0; best_count_index = 0; second_best_count = 0; second_best_count_index = 0; //reset counters
+			for i in 0..3 { alt_counts[i] = 0; }
+		}
+    }
+}
 fn count_kmers_fastq(kmers_in: Vec<String>, params: Params, thread_index: u64) -> (CountingBloomFilter, FnvHashSet<u64>) {
     let total_kmers = params.estimated_kmers / params.threads;
     if total_kmers > std::u32::MAX as u64 { panic!("cannot deal with this many estimated kmers with this few threads."); }

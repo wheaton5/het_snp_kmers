@@ -9,4 +9,5 @@ bloom = "0.3.2"
 flate2 = "1.0.6"
 debruijn = {git = "https://github.com/10XGenomics/rust-debruijn.git"}
 dna_io = {git = "https://github.com/wheaton5/dna_io.git"}
+rayon = "1.0.3"
 fnv = "1.0.6"
