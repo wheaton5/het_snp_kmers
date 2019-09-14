@@ -3,19 +3,12 @@ version: "1.0"
 author: Haynes Heaton <whheaton@gmail.com>
 about: Finds kmer pairs that are different in the middle base and each have roughly haploid coverage. Meant for illumina data as an initial step for de novo phasing.
 args:
-    - inputs:
-        long: inputs
+    - kmer_counts:
+        long: kmer_counts
         short: i
         takes_value: true
-        multiple: true
         required: true
-        help: input sequence files (fastq,fasta can be gzipped, sam, bam) from which to find het snp kmers
-    - kmer_size:
-        long: kmer_size
-        short: k
-        takes_value: true
-        required: false
-        help: kmer size to use, defaults to 21
+        help: kmer counts in tsv kmer\tcount (kmer is reverse compliment canonicalized)
     - min_coverage:
         long: min_coverage
         takes_value: true
@@ -35,23 +28,3 @@ args:
         takes_value: true
         required: false
         help: max sum of all kmers with middle base changed
-    - estimated_kmers:
-        required: true
-        takes_value: true
-        long: estimated_kmers
-        help: estimated total unique kmers. good rule of thumb is roughly 2 * genome size
-    - output_full_hist:
-        long: output_full_hist
-        required: true
-        takes_value: true
-        help: file name for full kmer histogram
-    - threads:
-        long: threads
-        short: t
-        takes_value: true
-        help: number of threads to use, defaults to 1
-    - counting_bits:
-        long: counting_bits
-        short: b
-        takes_value: true
-        help: number of bits used for counting bloom filter. Sets limit for maximum count value of 2^counting_bits-1. Default 7.

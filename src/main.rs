@@ -1,42 +1,197 @@
 #[macro_use]
 extern crate clap;
-extern crate bloom;
-extern crate flate2;
 extern crate debruijn;
 extern crate fnv;
-extern crate dna_io;
-use std::thread;
-use fnv::FnvHasher;
-use std::collections::{HashSet};
-use std::hash::BuildHasherDefault;
+extern crate hashbrown;
 
-type FnvHashSet<V> = HashSet<V, BuildHasherDefault<FnvHasher>>;
+use std::io::BufReader;
+use std::io::BufRead;
+use std::fs::File;
+use std::io::Write;
+use std::error::Error;
+use std::str;
+
+use hashbrown::{HashMap,HashSet};
+use fnv::FnvHasher;
+use std::hash::BuildHasherDefault;
+type FnvHashMap<T,V> = HashMap<T,V, BuildHasherDefault<FnvHasher>>;
+type FnvHashSet<T> = HashSet<T, BuildHasherDefault<FnvHasher>>;
 
 use clap::{App};
 
-use std::error::Error;
-use std::io::prelude::*;
-
 use std::cmp::min;
 
-use debruijn::*;
-use debruijn::kmer::*;
+//use debruijn::*;
+//use debruijn::kmer::*;
 
 static mut KMER_SIZE: usize = 21;
 
-use bloom::CountingBloomFilter;
-
 fn main() {
-    let (input_files, output_hist, parameters) = load_params();
-    let mut thread_handles: Vec<std::thread::JoinHandle<Hist>> = Vec::new();
-
-    for thread_index in 0..parameters.threads {
-        let t = thread_spawner(input_files.clone(), parameters.clone(), thread_index);
-        thread_handles.push(t);
-    }
-    wait_and_join_hists(thread_handles, output_hist);
+    let params = load_params();
+    //let mut thread_handles: Vec<std::thread::JoinHandle<Hist>> = Vec::new();
+    let (het_kmers, het_kmer_pairs) = load_kmers(&params);
+    //for thread_index in 0..parameters.threads {
+    //    let t = thread_spawner(input_files.clone(), parameters.clone(), thread_index);
+    //    thread_handles.push(t);
+    //}
 }
 
+
+fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<u8>>) {
+    //let mut kmer_counts: FnvHashMap<u64, u16> = FnvHashMap::default();
+    let mut kmer_counts: FnvHashMap<Vec<u8>, [u16; 4]> = FnvHashMap::default();
+    let mut set_to_ret: FnvHashSet<Vec<u8>> = FnvHashSet::default();
+    let mut map_to_ret: FnvHashMap<Vec<u8>, Vec<u8>> = FnvHashMap::default();
+    
+    let f = File::open(params.kmer_counts_file.to_string()).expect("Unable to open kmer counts file");
+    let mut f = BufReader::new(f);
+    let mut base_before_middle = b'0';
+    let mut index_before_middle: usize = 0;
+    let mut middle_index: usize = 0;
+    let mut buf = vec![];
+    let mut buf2 = vec![];
+    let mut index = 0;
+    let mut total_counts = 0; let mut best_count = 0; let mut best_count_index = 0;
+    let mut second_best_count = 0; let mut second_best_count_index = 0;
+    let base_index = [b'A', b'C', b'G', b'T'];
+    loop {
+        let num_bytes = f.read_until(b'\t', &mut buf).expect("failure to read kmer");
+        if num_bytes == 0 { break; }
+        if index == 0 {
+            unsafe { KMER_SIZE = num_bytes - 1; }
+            middle_index = (num_bytes - 1)/2;
+            index_before_middle = middle_index - 1;
+        }
+        if buf[index_before_middle] != base_before_middle {
+            // find kmer pairs in this set
+            for (invariant, counts) in &kmer_counts {
+                for (index, count) in counts.iter().enumerate() {
+                    total_counts += *count;
+                    if *count >= best_count {
+                        second_best_count = best_count;
+                        second_best_count_index = best_count_index;
+                        best_count = *count;
+                        best_count_index = index;
+                    } else if *count >= second_best_count {
+                        second_best_count = *count;
+                        second_best_count_index = index;
+                    }
+                }
+                //println!("{} {} {} {}", total_counts, best_count, second_best_count, params.max_error);
+                if best_count >= params.min_count && second_best_count >= params.min_count &&
+                        best_count <= params.max_count && total_counts - best_count - second_best_count <= params.max_error &&
+                        best_count + second_best_count <= params.max_sum {
+                    let mut kmer = invariant.clone();//KmerX::from_u64(middle_base_invariant_kmer | masks[best_count_index]);
+                    kmer[middle_index] = base_index[best_count_index];
+                    let mut kmer2 = invariant.clone();//KmerX::from_u64(middle_base_invariant_kmer | masks[second_best_count_index]);
+                    kmer2[middle_index] = base_index[second_best_count_index];
+                    println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer).unwrap(), 
+                            best_count, str::from_utf8(&kmer2).unwrap(), second_best_count);
+                    set_to_ret.insert(kmer.clone());
+                    //set_to_ret.insert(kmer2.clone());
+                    map_to_ret.insert(kmer.clone(), kmer2.clone());
+                    map_to_ret.insert(kmer2, kmer);
+                }
+                total_counts = 0; best_count = 0; best_count_index = 0; second_best_count = 0; second_best_count_index = 0; //reset counters
+            }
+            kmer_counts.drain();
+            base_before_middle = buf[index_before_middle];
+        }
+        
+        let num_bytes2 = f.read_until(b'\n', &mut buf2).expect("failure to read count");
+        if num_bytes2 == 0 { break; }
+        let count: u16 = str::from_utf8(&buf2[0..(num_bytes2-1)]).unwrap().parse::<u16>().unwrap();
+        let middle_base = buf[index_before_middle + 1];
+        let mut middle_base_invariant = buf[0..(num_bytes-1)].to_vec();
+        middle_base_invariant[index_before_middle + 1] = b'N';
+        let counts = kmer_counts.entry(middle_base_invariant).or_insert([0; 4]);
+        let countdex = match middle_base {
+            b'A' => 0,
+            b'C' => 1,
+            b'G' => 2,
+            b'T' => 3,
+            _ => 0,
+        };
+        counts[countdex] = count;       
+        buf.clear();
+        buf2.clear();
+        index += 1;
+    }
+    /**
+    for (index, line) in f.lines().enumerate() {
+        let line = line.expect("Unable to read line");
+        let tokens: Vec<&str> = line.trim().split_whitespace().collect();
+        let kmer: &str = tokens[0];
+        if index == 0 {
+            unsafe { KMER_SIZE = kmer.len(); }
+        }
+        let count = tokens[1].to_string().parse::<u16>().unwrap();
+         
+        let k = KmerX::from_ascii(kmer.as_bytes());
+    
+        kmer_counts.insert(k.to_u64(), count);
+    }
+    println!("done with loading kmer counts");
+    let mut set_to_ret: FnvHashSet<u64> = FnvHashSet::default();
+    let mut map_to_ret: FnvHashMap<u64, u64> = FnvHashMap::default();
+
+    let middle_base_mask: u64 = !( 3 << ( KX::K() ) ) & KmerX::top_mask( KX::K() );
+    let a_mask = 0; // a mask you can | with a middle base invariant kmer to get that kmer with an A in the middle
+    let c_mask = ( 1 << ( KX::K() - 1 ) ) | middle_base_mask; // or a C in the middle
+    let g_mask = ( 2 << ( KX::K() - 1 ) ) | middle_base_mask; // etc
+    let t_mask = ( 3 << ( KX::K() - 1 ) ) | middle_base_mask; // etc
+    let masks: [u64; 4] = [ a_mask, c_mask, g_mask, t_mask ];
+    
+    let mut alt_counts: [u16; 4] = [0,0,0,0]; let mut total_counts = 0;
+    let mut best_count = 0; let mut best_count_index = 0;
+    let mut second_best_count = 0; let mut second_best_count_index = 0;
+    
+    for (kmer, count) in kmer_counts.iter() {
+        if set_to_ret.contains(kmer) { continue; }
+        let middle_base_invariant_kmer = kmer & middle_base_mask;
+                let a_hash = middle_base_invariant_kmer;  // always < than its RC so no check
+        let c_hash = middle_base_invariant_kmer | c_mask; // always < its RC so no check
+        let g_u64 = middle_base_invariant_kmer | g_mask; //could be > than its RC if palindromic. must check
+        let gmer = KmerX::from_u64( g_u64 );
+        let g_hash = min( g_u64, gmer.rc().to_u64() );
+        let t_u64 = middle_base_invariant_kmer | t_mask; //could be > than its RC if palindromic. must check
+        let tmer = KmerX::from_u64( t_u64 );
+        let t_hash = min( t_u64, tmer.rc().to_u64() );
+        alt_counts[0] = match kmer_counts.get( &a_hash ) { Some(x) => *x, None => 0, };
+        alt_counts[1] = match kmer_counts.get( &c_hash ) { Some(x) => *x, None => 0, };
+        alt_counts[2] = match kmer_counts.get( &g_hash ) { Some(x) => *x, None => 0, };
+        alt_counts[3] = match kmer_counts.get( &t_hash ) { Some(x) => *x, None => 0, };
+
+        for (index, count) in alt_counts.iter().enumerate() {
+            if *count >= best_count {
+                second_best_count = best_count;
+                second_best_count_index = best_count_index;
+                best_count = *count;
+                best_count_index = index;
+            } else if *count >= second_best_count {
+                second_best_count = *count;
+                second_best_count_index = index;
+            }
+        }
+        if best_count >= params.min_count && second_best_count >= params.min_count &&
+                best_count <= params.max_count && total_counts - best_count - second_best_count <= params.max_error &&
+                best_count + second_best_count <= params.max_sum {
+            let kmer = KmerX::from_u64(middle_base_invariant_kmer | masks[best_count_index]);
+            let kmer2 = KmerX::from_u64(middle_base_invariant_kmer | masks[second_best_count_index]);
+            //println!("{}\t{}\t{}\t{}",kmer.to_string(), best_count.to_string(), kmer2.to_string(), second_best_count.to_string());
+            set_to_ret.insert(kmer.to_u64());
+            set_to_ret.insert(kmer2.to_u64());
+            map_to_ret.insert(kmer.to_u64(), kmer2.to_u64());
+            map_to_ret.insert(kmer2.to_u64(), kmer2.to_u64());
+        }
+        total_counts = 0; best_count = 0; best_count_index = 0; second_best_count = 0; second_best_count_index = 0; //reset counters
+        for i in 0..3 { alt_counts[i] = 0; }
+    }
+    **/
+    (set_to_ret, map_to_ret)
+}
+
+/*
 fn wait_and_join_hists(thread_handles: Vec<std::thread::JoinHandle<Hist>>, output_hist: String) {
     let mut big_hist: [u32; 1000] = [0; 1000];
     for t in thread_handles {
@@ -49,9 +204,8 @@ fn wait_and_join_hists(thread_handles: Vec<std::thread::JoinHandle<Hist>>, outpu
     let path = std::path::Path::new(&output_hist);
     let display = path.display();
     let mut file = match std::fs::File::create(&path) {
-        Err(why) => panic!("couldn't create {}: {}",
-                           display,
-                           why.description()),
+        Err(why) => panic!("couldn't create {}",
+                           display),
         Ok(file) => file,
     };
     for (index, count) in big_hist.iter().enumerate() {
@@ -168,8 +322,9 @@ fn detect_het_kmers(kmer_counts: CountingBloomFilter,
 struct Hist{
     hist: [u32; 1000],
 }
+*/
 
-
+/*
 type KmerX = VarIntKmer<u64, KX>;
 #[derive(Debug, Hash, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct KX;
@@ -181,56 +336,40 @@ impl KmerSize for KX {
         }
     }
 }
+*/
 
 #[derive(Clone)]
 struct Params {
-    min_count: u32,
-    max_count: u32,
-    max_error: u32,
-    max_sum: u32,
-    threads: u64,
-    estimated_kmers: u64,
+    kmer_counts_file: String, 
+    min_count: u16,
+    max_count: u16,
+    max_error: u16,
+    max_sum: u16,
     counting_bits: usize,
+    threads: usize,
+    estimated_kmers: u64,
 }
 
-fn load_params() -> (Vec<String>, String, Params) {
+fn load_params() -> Params {
     let yaml = load_yaml!("params.yml");
     let params = App::from_yaml(yaml).get_matches();
-    let mut input_files: Vec<String> = Vec::new();
-    for input_file in params.values_of("inputs").unwrap() {
-        input_files.push(input_file.to_string());
-    }
+    let kmer_counts = params.value_of("kmer_counts").unwrap();
     let min = params.value_of("min_coverage").unwrap();
-    let min: u32 = min.to_string().parse::<u32>().unwrap();
+    let min: u16 = min.to_string().parse::<u16>().unwrap();
     let max = params.value_of("max_coverage").unwrap();
-    let max: u32 = max.to_string().parse::<u32>().unwrap();
-    let kmer_size = params.value_of("kmer_size").unwrap_or("21");
-    let kmer_size: usize = kmer_size.to_string().parse::<usize>().unwrap();
-    if kmer_size % 2 == 0 {
-        panic!("kmer size required to be odd");
-    }
-    unsafe {
-        KMER_SIZE = kmer_size;
-    }
+    let max: u16 = max.to_string().parse::<u16>().unwrap();
     let max_error = params.value_of("max_error").unwrap_or("0");
-    let max_error: u32 = max_error.to_string().parse::<u32>().unwrap();
+    let max_error: u16 = max_error.to_string().parse::<u16>().unwrap();
     let max_sum = params.value_of("max_total_coverage").unwrap();
-    let max_sum: u32 = max_sum.to_string().parse::<u32>().unwrap();
-    let output_hist = params.value_of("output_full_hist").unwrap_or("none");
-    let estimated_kmers = params.value_of("estimated_kmers").unwrap_or("1000000000");
-    let estimated_kmers: u64 = estimated_kmers.to_string().parse::<u64>().unwrap();
-    let threads = params.value_of("threads").unwrap_or("1");
-    let threads: u64 = threads.to_string().parse::<u64>().unwrap();
-    let counting_bits = params.value_of("counting_bits").unwrap_or("7");
-    let counting_bits: usize = counting_bits.to_string().parse::<usize>().unwrap();
-    let params: Params = Params{
+    let max_sum: u16 = max_sum.to_string().parse::<u16>().unwrap();
+    Params{
+        kmer_counts_file: kmer_counts.to_string(),
         min_count: min,
         max_count: max,
         max_error: max_error,
         max_sum: max_sum,
-        threads: threads,
-        estimated_kmers: estimated_kmers,
-        counting_bits: counting_bits,
-    };
-    (input_files, output_hist.to_string(), params)
+        counting_bits: 0,
+        estimated_kmers: 0,
+        threads: 0,
+    }
 }
