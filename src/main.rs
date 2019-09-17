@@ -2,6 +2,11 @@
 extern crate clap;
 extern crate fnv;
 extern crate hashbrown;
+extern crate rand;
+
+use rand::Rng;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 use std::io::BufReader;
 use std::io::BufRead;
@@ -30,6 +35,8 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
     let mut kmer_counts: FnvHashMap<Vec<u8>, [u16; 4]> = FnvHashMap::default();
     let mut set_to_ret: FnvHashSet<Vec<u8>> = FnvHashSet::default();
     let mut map_to_ret: FnvHashMap<Vec<u8>, Vec<u8>> = FnvHashMap::default();
+    let seed: [u8; 32] = [4; 32]; // guaranteed random number determined by fair dice roll https://xkcd.com/221/
+    let mut rng: StdRng = SeedableRng::from_seed(seed);
     
     let f = File::open(params.kmer_counts_file.to_string()).expect("Unable to open kmer counts file");
     let mut f = BufReader::new(f);
@@ -71,8 +78,13 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
                     kmer[middle_index] = base_index[best_count_index];
                     let mut kmer2 = invariant.clone();
                     kmer2[middle_index] = base_index[second_best_count_index];
-                    println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer).unwrap(), 
+                    if rng.gen_range(0,2) == 0 {
+                        println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer).unwrap(), 
                             best_count, str::from_utf8(&kmer2).unwrap(), second_best_count);
+                    } else {
+                        println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer2).unwrap(), 
+                            second_best_count, str::from_utf8(&kmer).unwrap(), second_best_count);
+                    }
                     set_to_ret.insert(kmer.clone());
                     //set_to_ret.insert(kmer2.clone());
                     map_to_ret.insert(kmer.clone(), kmer2.clone());
