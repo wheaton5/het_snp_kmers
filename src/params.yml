@@ -28,3 +28,13 @@ args:
         takes_value: true
         required: false
         help: max sum of all kmers with middle base changed
+    - unpaired_het_modimizer:
+        long: unpaired_het_modimizer
+        takes_value: true
+        required: true
+        help: use unpaired het kmers which satisfy kmer % modimizer == 0
+    - hom_modimizer:
+        long: hom_modimizer
+        takes_value: true
+        required: true
+        help: use homozygous kmers which satisfy kmer % modimizer == 0

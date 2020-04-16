@@ -78,7 +78,7 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
                     }
                 }
                 //println!("{} {} {} {}", total_counts, best_count, second_best_count, params.max_error);
-                if best_count >= params.min_count && second_best_count >= params.min_count &&
+                if best_count >= params.min_count && second_best_count >= params.min_count && //PAIRED HET
                         best_count <= params.max_count && total_counts - best_count - second_best_count <= params.max_error &&
                         best_count + second_best_count <= params.max_sum {
                     let mut kmer = invariant.clone();//KmerX::from_u64(middle_base_invariant_kmer | masks[best_count_index]);
@@ -91,6 +91,23 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
                     //set_to_ret.insert(kmer2.clone());
                     map_to_ret.insert(kmer.clone(), kmer2.clone());
                     map_to_ret.insert(kmer2, kmer);
+                } else if best_count >= params.max_count && best_count <= params.max_sum && 
+                    total_counts - best_count <= params.max_error { // HOMOZYGOUS
+                    let mut kmer = invariant.clone();//KmerX::from_u64(middle_base_invariant_kmer | masks[best_count_index]);
+                    kmer[middle_index] = base_index[best_count_index];
+                    let kmer_u64 = twobit(&kmer);
+                    if kmer_u64 % params.hom_modimizer == 0 {
+                        println!("{}\t{}\tHOM\t.",str::from_utf8(&kmer).unwrap(), best_count);
+                    }
+                } else if best_count >= params.min_count && best_count <= params.max_count &&
+                    total_counts - best_count <= params.max_error { // UNPAIRED HET
+                    
+                    let mut kmer = invariant.clone();//KmerX::from_u64(middle_base_invariant_kmer | masks[best_count_index]);
+                    kmer[middle_index] = base_index[best_count_index];
+                    let kmer_u64 = twobit(&kmer);
+                    if kmer_u64 % params.hom_modimizer == 0 {
+                        println!("{}\t{}\tHET\t.",str::from_utf8(&kmer).unwrap(), best_count);
+                    }
                 }
                 total_counts = 0; best_count = 0; best_count_index = 0; second_best_count = 0; second_best_count_index = 0; //reset counters
             }
@@ -189,6 +206,25 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
     }
     **/
     (set_to_ret, map_to_ret)
+}
+
+
+fn twobit(kmer: &[u8]) -> u64 {
+    let mut kmer_u64: u64 = 0;
+    for base in kmer {
+        kmer_u64 = kmer_u64 << 2;
+        let base: u64 = match base {
+            b'A' => 0,
+            b'C' => 1,
+            b'G' => 2,
+            b'T' => 3,
+            _ => { assert!(false); 0},
+        };
+        //println!("base {}",base);
+        assert!(base < 4);
+        kmer_u64 = kmer_u64 | (base as u64);
+    }
+    kmer_u64
 }
 
 /*
@@ -348,6 +384,8 @@ struct Params {
     counting_bits: usize,
     threads: usize,
     estimated_kmers: u64,
+    unpaired_het_modimizer: u64,
+    hom_modimizer: u64,
 }
 
 fn load_params() -> Params {
@@ -362,6 +400,10 @@ fn load_params() -> Params {
     let max_error: u16 = max_error.to_string().parse::<u16>().unwrap();
     let max_sum = params.value_of("max_total_coverage").unwrap();
     let max_sum: u16 = max_sum.to_string().parse::<u16>().unwrap();
+    let unpaired_het_modimizer = params.value_of("unpaired_het_modimizer").unwrap();
+    let unpaired_het_modimizer: u64 = unpaired_het_modimizer.to_string().parse::<u64>().unwrap();
+    let hom_modimizer = params.value_of("hom_modimizer").unwrap();
+    let hom_modimizer: u64 = hom_modimizer.to_string().parse::<u64>().unwrap();
     Params{
         kmer_counts_file: kmer_counts.to_string(),
         min_count: min,
@@ -371,5 +413,7 @@ fn load_params() -> Params {
         counting_bits: 0,
         estimated_kmers: 0,
         threads: 0,
+        unpaired_het_modimizer: unpaired_het_modimizer,
+        hom_modimizer: hom_modimizer,
     }
 }
