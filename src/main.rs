@@ -3,6 +3,9 @@ extern crate clap;
 extern crate fnv;
 extern crate hashbrown;
 extern crate rand;
+extern crate debruijn;
+use debruijn::*;
+use debruijn::kmer::*;
 
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -79,13 +82,13 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
                     kmer[middle_index] = base_index[best_count_index];
                     let mut kmer2 = invariant.clone();
                     kmer2[middle_index] = base_index[second_best_count_index];
-                    if rng.gen_range(0,2) == 0 {
-                        println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer).unwrap(), 
-                            best_count, str::from_utf8(&kmer2).unwrap(), second_best_count);
-                    } else {
-                        println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer2).unwrap(), 
-                            second_best_count, str::from_utf8(&kmer).unwrap(), second_best_count);
-                    }
+                    //if rng.gen_range(0,2) == 0 {
+                    //    println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer).unwrap(), 
+                    //        best_count, str::from_utf8(&kmer2).unwrap(), second_best_count);
+                    //} else {
+                    //    println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer2).unwrap(), 
+                    //        second_best_count, str::from_utf8(&kmer).unwrap(), second_best_count);
+                    //}
                     set_to_ret.insert(kmer.clone());
                     //set_to_ret.insert(kmer2.clone());
                     map_to_ret.insert(kmer.clone(), kmer2.clone());
@@ -95,18 +98,18 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
                     let mut kmer = invariant.clone();//KmerX::from_u64(middle_base_invariant_kmer | masks[best_count_index]);
                     kmer[middle_index] = base_index[best_count_index];
                     let kmer_u64 = twobit(&kmer);
-                    if kmer_u64 % params.hom_modimizer == 0 {
-                        println!("{}\t{}\tHOM\t.",str::from_utf8(&kmer).unwrap(), best_count);
-                    }
+                    //if kmer_u64 % params.hom_modimizer == 0 {
+                    //    println!("{}\t{}\tHOM\t.",str::from_utf8(&kmer).unwrap(), best_count);
+                    //}
                 } else if best_count >= params.min_count && best_count <= params.max_count &&
                     total_counts - best_count <= params.max_error { // UNPAIRED HET
                     
                     let mut kmer = invariant.clone();//KmerX::from_u64(middle_base_invariant_kmer | masks[best_count_index]);
                     kmer[middle_index] = base_index[best_count_index];
                     let kmer_u64 = twobit(&kmer);
-                    if kmer_u64 % params.hom_modimizer == 0 {
-                        println!("{}\t{}\tHET\t.",str::from_utf8(&kmer).unwrap(), best_count);
-                    }
+                    //if kmer_u64 % params.hom_modimizer == 0 {
+                    //    println!("{}\t{}\tHET\t.",str::from_utf8(&kmer).unwrap(), best_count);
+                    //}
                 }
                 total_counts = 0; best_count = 0; best_count_index = 0; second_best_count = 0; second_best_count_index = 0; //reset counters
             }
@@ -134,6 +137,24 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
         index += 1;
     }
     (set_to_ret, map_to_ret)
+}
+
+fn twobit(kmer: &[u8]) -> u64 {
+    let mut kmer_u64: u64 = 0;
+    for base in kmer {
+        kmer_u64 = kmer_u64 << 2;
+        let base: u64 = match base {
+            b'A' => 0,
+            b'C' => 1,
+            b'G' => 2,
+            b'T' => 3,
+            _ => { assert!(false); 0},
+        };
+        //println!("base {}",base);
+        assert!(base < 4);
+        kmer_u64 = kmer_u64 | (base as u64);
+    }
+    kmer_u64
 }
 
 #[derive(Clone)]

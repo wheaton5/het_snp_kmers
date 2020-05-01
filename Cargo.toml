@@ -8,3 +8,4 @@ clap = {version = "~2.27.0", features = ["yaml"]}
 hashbrown = "0.1"
 fnv = "1.0.6"
 rand = "*"
+debruijn = {git = "https://github.com/10XGenomics/rust-debruijn.git"}
