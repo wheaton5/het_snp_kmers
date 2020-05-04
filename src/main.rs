@@ -82,13 +82,13 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
                     kmer[middle_index] = base_index[best_count_index];
                     let mut kmer2 = invariant.clone();
                     kmer2[middle_index] = base_index[second_best_count_index];
-                    //if rng.gen_range(0,2) == 0 {
-                    //    println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer).unwrap(), 
-                    //        best_count, str::from_utf8(&kmer2).unwrap(), second_best_count);
-                    //} else {
-                    //    println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer2).unwrap(), 
-                    //        second_best_count, str::from_utf8(&kmer).unwrap(), second_best_count);
-                    //}
+                    if rng.gen_range(0,2) == 0 {
+                        println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer).unwrap(), 
+                            best_count, str::from_utf8(&kmer2).unwrap(), second_best_count);
+                    } else {
+                        println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer2).unwrap(), 
+                            second_best_count, str::from_utf8(&kmer).unwrap(), second_best_count);
+                    }
                     set_to_ret.insert(kmer.clone());
                     //set_to_ret.insert(kmer2.clone());
                     map_to_ret.insert(kmer.clone(), kmer2.clone());
@@ -98,9 +98,9 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
                     let mut kmer = invariant.clone();//KmerX::from_u64(middle_base_invariant_kmer | masks[best_count_index]);
                     kmer[middle_index] = base_index[best_count_index];
                     let kmer_u64 = twobit(&kmer);
-                    //if kmer_u64 % params.hom_modimizer == 0 {
-                    //    println!("{}\t{}\tHOM\t.",str::from_utf8(&kmer).unwrap(), best_count);
-                    //}
+                    if kmer_u64 % params.hom_modimizer == 0 {
+                        println!("{}\t{}\tHOM\t.",str::from_utf8(&kmer).unwrap(), best_count);
+                    }
                 } else if best_count >= params.min_count && best_count <= params.max_count &&
                     total_counts - best_count <= params.max_error { // UNPAIRED HET
                     
