@@ -87,7 +87,7 @@ fn load_kmers(params: &Params) -> (FnvHashSet<Vec<u8>>, FnvHashMap<Vec<u8>, Vec<
                             best_count, str::from_utf8(&kmer2).unwrap(), second_best_count);
                     } else {
                         println!("{}\t{}\t{}\t{}",str::from_utf8(&kmer2).unwrap(), 
-                            second_best_count, str::from_utf8(&kmer).unwrap(), second_best_count);
+                            second_best_count, str::from_utf8(&kmer).unwrap(), best_count);
                     }
                     set_to_ret.insert(kmer.clone());
                     //set_to_ret.insert(kmer2.clone());
