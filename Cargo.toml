@@ -3,6 +3,10 @@ name = "het_snp_kmers"
 version = "0.1.0"
 authors = ["wheaton5 <whheaton@gmail.com>"]
 
+[[bin]]
+name = "het_snp_kmers"
+path = "src/main.rs"
+
 [dependencies]
 clap = {version = "~2.27.0", features = ["yaml"]}
 hashbrown = "0.1"
